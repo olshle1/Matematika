@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kvartīļu Kalkulators un Kastu diagramma</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Oranienbaum&family=Quattrocento+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #FEFEFE;
+            --primary-color: #2D3748;
+            --secondary-color: #4A5568;
+            --accent-color: #C53030;
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        }
+        body {
+            font-family: 'Quattrocento Sans', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--primary-color);
+        }
+        .hero-title {
+            font-family: 'Oranienbaum', serif;
+            font-size: 3.5rem;
+            line-height: 1.1;
+            color: var(--primary-color);
+        }
+        .accent-text { color: var(--accent-color); }
+        .content-card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 2.5rem;
+            box-shadow: var(--card-shadow);
+            border: 1px solid #e2e8f0;
+        }
+        .hero-bg {
+            background: linear-gradient(135deg, #FEFEFE 0%, #f7f7f7 100%);
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .chart-container { height: 400px; width: 100%; margin-top: 2rem; }
+        .step-list li { position: relative; padding-left: 1.5rem; margin-bottom: 0.5rem; }
+        .step-list li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: var(--accent-color);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<header class="hero-bg py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center">
+            <h1 class="hero-title mb-4">
+                Kvartīļu
+                <span class="accent-text block sm:inline">kalkulators</span>
+            </h1>
+            <p class="text-xl text-secondary-color max-w-3xl mx-auto leading-relaxed">
+                Ievadiet savus datus, lai aprēķinātu kvartīles, starpkvartīļu amplitūdu (IQR), izlecošas vērtības un vizualizētu rezultātus ar kastu diagrammu.
+            </p>
+        </div>
+    </div>
+</header>
+
+<main class="py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
+            <div class="lg:col-span-1">
+                <div class="content-card mb-10">
+                    <h2 class="text-2xl font-bold mb-4">Datu ievade un aprēķins</h2>
+                    <label for="dataInput" class="block text-sm font-medium text-gray-700 mb-2">
+                        Ievadiet datus, atdalot ar atstarpi vai jaunu rindu:
+                    </label>
+                    <textarea id="dataInput" rows="6"
+                              class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500"
+                              placeholder="Piemēram: 34 7 7 8 9 10 12 14 15 18 20"
+                    >34 7 7 8 9 10 12 14 15 18 20</textarea>
+
+                    <button onclick="calculateQuartiles()"
+                            class="w-full mt-4 px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors">
+                        Aprēķināt kvartīles un konstruēt kastu diagrammu.
+                    </button>
+
+                    <div id="results" class="mt-8 space-y-4"></div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2">
+                <div class="content-card">
+                    <h2 class="text-2xl font-bold mb-4">Atrisinājums</h2>
+                    <ul id="steps" class="step-list text-gray-700 space-y-2">
+                        <li>Ievadiet datus, lai redzētu aprēķinu soļus.</li>
+                    </ul>
+                </div>
+                
+                <div class="content-card mt-8">
+                    <h2 class="text-2xl font-bold mb-4">Kastu diagramma</h2>
+                    <div id="boxplotChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer class="bg-gray-100 mt-16 py-8 border-t border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-secondary-color text-sm">
+        <p>&copy; 2026 Interaktīvais kvartīļu kalkulators. Izglītības projekts.</p>
+    </div>
+</footer>
+
+<script>
+let boxplotChart = null;
+
+function formatNumber(num) {
+    if (Number.isInteger(num)) return num.toString();
+    let formatted = num.toFixed(2);
+    if (formatted.endsWith('00')) {
+        formatted = num.toFixed(0);
+    } else if (formatted.endsWith('0')) {
+        formatted = num.toFixed(1);
+    }
+    return formatted.replace('.', ',');
+}
+
+function formatDataArray(arr, useBrackets = false) {
+    const formatted = arr.map(formatNumber).join('; ');
+    return useBrackets ? `{${formatted}}` : formatted;
+}
+
+function calculateMedian(data) {
+    const n = data.length;
+    if (n === 0) return NaN;
+    const medianIndex = Math.floor(n / 2);
+    if (n % 2 !== 0) return data[medianIndex];
+    return (data[medianIndex - 1] + data[medianIndex]) / 2;
+}
+
+function getQuartiles(dataArray) {
+    const sortedData = [...dataArray].sort((a, b) => a - b);
+    const n = sortedData.length;
+    if (n < 4) return null; 
+    
+    const Min = sortedData[0];
+    const Max = sortedData[n - 1];
+    const Q2 = calculateMedian(sortedData);
+
+    let lowerHalf, upperHalf;
+    const medianIndex = Math.floor(n / 2);
+    if (n % 2 !== 0) {
+        lowerHalf = sortedData.slice(0, medianIndex);
+        upperHalf = sortedData.slice(medianIndex + 1);
+    } else {
+        lowerHalf = sortedData.slice(0, medianIndex);
+        upperHalf = sortedData.slice(medianIndex);
+    }
+
+    const Q1 = calculateMedian(lowerHalf);
+    const Q3 = calculateMedian(upperHalf);
+    const IQR = Q3 - Q1;
+    const lowerBound = Q1 - 1.5 * IQR;
+    const upperBound = Q3 + 1.5 * IQR;
+
+    const outliers = sortedData.filter(x => x < lowerBound || x > upperBound);
+    const nonOutliers = sortedData.filter(x => x >= lowerBound && x <= upperBound);
+    
+    const minWhisker = nonOutliers.length > 0 ? nonOutliers[0] : Min;
+    const maxWhisker = nonOutliers.length > 0 ? nonOutliers[nonOutliers.length - 1] : Max;
+
+    return {
+        sortedData, n, Q1, Q2, Q3, IQR,
+        Min, Max, lowerBound, upperBound, outliers,
+        minWhisker, maxWhisker, lowerHalf, upperHalf
+    };
+}
+
+function calculateQuartiles() {
+    const dataInput = document.getElementById('dataInput').value;
+    const dataArray = dataInput.split(/[\s,;\n]+/)
+                               .map(x => parseFloat(x.trim()))
+                               .filter(x => !isNaN(x));
+
+    const resultsDiv = document.getElementById('results');
+    const stepsDiv = document.getElementById('steps');
+    
+    resultsDiv.innerHTML = '';
+    stepsDiv.innerHTML = '';
+
+    if (dataArray.length < 4) {
+        resultsDiv.innerHTML = `<p class="text-red-500 font-bold">Lūdzu, ievadiet vismaz 4 skaitliskas vērtības.</p>`;
+        stepsDiv.innerHTML = `<li>Lūdzu, ievadiet vismaz 4 skaitliskas vērtības.</li>`;
+        if (boxplotChart) boxplotChart.clear();
+        return;
+    }
+
+    const results = getQuartiles(dataArray);
+    if (!results) return;
+
+    const { sortedData, n, Q1, Q2, Q3, IQR, lowerBound, upperBound, outliers, lowerHalf, upperHalf, minWhisker, maxWhisker } = results;
+
+    stepsDiv.innerHTML += `<li>1. Sakārtojiet datus: ${formatDataArray(sortedData)} (N = ${n})</li>`;
+    stepsDiv.innerHTML += `<li>2. Atrodiet Mediānu (Q2): Q2 = ${formatNumber(Q2)} (${n % 2 !== 0 ? 'nepāra N – vidējais elements' : 'pāra N – vidējo divu skaitļu vidējais'}).</li>`;
+    stepsDiv.innerHTML += `<li>3. Aprēķinam Q1 (kreisās daļas mediāna): ${formatDataArray(lowerHalf, true)} → Q1 = ${formatNumber(Q1)}</li>`;
+    stepsDiv.innerHTML += `<li>4. Aprēķinam Q3 (labās daļas mediāna): ${formatDataArray(upperHalf, true)} → Q3 = ${formatNumber(Q3)}</li>`;
+    stepsDiv.innerHTML += `<li>5. Aprēķinam starpkvartīļu amplitūdu: IQR = Q3 − Q1 = ${formatNumber(Q3)} − ${formatNumber(Q1)} = ${formatNumber(IQR)}</li>`;
+    stepsDiv.innerHTML += `<li>6. Robežas: [Q1 − 1,5·IQR; Q3 + 1,5·IQR] = [${formatNumber(lowerBound)}; ${formatNumber(upperBound)}]</li>`;
+    stepsDiv.innerHTML += `<li>7. Izlecošas vērtības (ārpus diapazona): ${outliers.length ? formatDataArray(outliers) : 'nav'}</li>`;
+    stepsDiv.innerHTML += `<li>8. Ūsas (min/max vērtības bez izlecošām): Q0 = ${formatNumber(minWhisker)}, Q4 = ${formatNumber(maxWhisker)}</li>`;
+
+    resultsDiv.innerHTML = `
+        <div class="space-y-3">
+            <div class="flex justify-between items-center p-3 bg-gray-100 rounded">
+                <span class="font-medium">Q0 (Minimālā ūsa):</span>
+                <span class="font-bold accent-text">${formatNumber(minWhisker)}</span>
+            </div>
+            <div class="flex justify-between items-center p-3 bg-red-50 rounded">
+                <span class="font-medium">Q1 (Pirmā kvartīle):</span>
+                <span class="font-bold accent-text">${formatNumber(Q1)}</span>
+            </div>
+            <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                <span class="font-medium">Q2 (Mediāna):</span>
+                <span class="font-bold accent-text">${formatNumber(Q2)}</span>
+            </div>
+            <div class="flex justify-between items-center p-3 bg-green-50 rounded">
+                <span class="font-medium">Q3 (Trešā kvartīle):</span>
+                <span class="font-bold accent-text">${formatNumber(Q3)}</span>
+            </div>
+            <div class="flex justify-between items-center p-3 bg-gray-100 rounded">
+                <span class="font-medium">Q4 (Maksimālā ūsa):</span>
+                <span class="font-bold accent-text">${formatNumber(maxWhisker)}</span>
+            </div>
+            <div class="flex justify-between items-center p-3 bg-yellow-50 rounded">
+                <span class="font-medium">IQR (starpkvartīļu amplitūda):</span>
+                <span class="font-bold accent-text">${formatNumber(IQR)}</span>
+            </div>
+            <div class="p-3 bg-gray-100 rounded text-sm">
+                <span class="font-medium text-primary-color">Izlecošas vērtības:</span>
+                <span class="font-bold text-red-600">${outliers.length ? formatDataArray(outliers) : 'Nav'}</span>
+            </div>
+        </div>
+    `;
+
+    drawBoxPlot(results);
+
+    anime({
+        targets: '#results > div',
+        translateX: [-20, 0],
+        opacity: [0, 1],
+        duration: 800,
+        delay: anime.stagger(100),
+        easing: 'easeOutQuart'
+    });
+}
+
+function drawBoxPlot(results) {
+    if (!boxplotChart) boxplotChart = echarts.init(document.getElementById('boxplotChart'));
+    
+    const { Q1, Q2, Q3, outliers, minWhisker, maxWhisker } = results;
+    const boxPlotData = [[minWhisker, Q1, Q2, Q3, maxWhisker]];
+    const outlierData = outliers.map(o => [0, o]);
+
+    const option = {
+        tooltip: {
+            trigger: 'item',
+            axisPointer: { type: 'shadow' },
+            formatter: function (param) {
+                if (param.seriesName === 'Boxplot') {
+                    return 'Kvartīļu kaste:<br>'
+                        + 'Maksimālā "ūsa": ' + formatNumber(param.data[5]) + '<br>'
+                        + 'Q3 (Trešā kvartīle): ' + formatNumber(param.data[4]) + '<br>'
+                        + 'Mediāna: ' + formatNumber(param.data[3]) + '<br>'
+                        + 'Q1 (Pirmā kvartīle): ' + formatNumber(param.data[2]) + '<br>'
+                        + 'Minimālā "ūsa": ' + formatNumber(param.data[1]) + '<br>'
+                        + 'IQR: ' + formatNumber(param.data[4] - param.data[2]);
+                }
+                if (param.seriesName === 'Izlecošas vērtības') {
+                    return 'Izlecoša vērtība: ' + formatNumber(param.data[1]);
+                }
+            }
+        },
+        grid: { left: '10%', right: '10%', bottom: '25%', top: '10%' }, 
+        xAxis: {
+            type: 'category',
+            data: ['Datu Kopa'],
+            boundaryGap: true,
+            name: 'Datu Kopas',
+            nameLocation: 'middle', 
+            nameGap: 30, 
+            splitArea: { show: false },
+            axisLabel: { formatter: 'Dati' }
+        },
+        yAxis: {
+            type: 'value',
+            name: 'Vērtības',
+            min: 'dataMin',
+            max: 'dataMax',
+            splitArea: { show: true }
+        },
+        series: [
+            {
+                name: 'Boxplot',
+                type: 'boxplot',
+                data: boxPlotData,
+                itemStyle: {
+                    color: '#90CDF4',
+                    borderColor: '#2D3748',
+                    borderWidth: 1.5
+                }
+            },
+            {
+                name: 'Izlecošas vērtības',
+                type: 'scatter',
+                data: outlierData,
+                symbolSize: 10,
+                itemStyle: { color: '#C53030' }
+            }
+        ]
+    };
+    boxplotChart.setOption(option, true);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    calculateQuartiles(); 
+
+    // Разрешаем перенос строк (Ctrl+Enter или Shift+Enter для отправки, либо просто убираем жесткий блок)
+    const dataInput = document.getElementById('dataInput');
+    dataInput.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault(); 
+            calculateQuartiles();
+        }
+    });
+
+    anime({
+        targets: '.hero-title, .hero-bg p',
+        translateY: [50, 0],
+        opacity: [0, 1],
+        duration: 1000,
+        delay: anime.stagger(100),
+        easing: 'easeOutQuart'
+    });
+    
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                anime({
+                    targets: entry.target,
+                    translateY: [50, 0],
+                    opacity: [0, 1],
+                    duration: 800,
+                    easing: 'easeOutQuart'
+                });
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.content-card').forEach(card => observer.observe(card));
+});
+</script>
+</body>
+</html>
